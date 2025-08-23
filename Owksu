@@ -1,0 +1,555 @@
+-- Brainrot Finder (Fully merged)
+-- Supports both the original global config style AND a per-brainrot config table
+-- Place this script into a local/exploit executor context for PlaceId 109983668079237
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+local allowedPlaceId = 109983668079237
+
+--// Color constants for mutation detection (defaults)
+local colorGold     = Color3.fromRGB(237, 178, 0)
+local colorDiamond  = Color3.fromRGB(37, 196, 254)
+local colorCandy    = Color3.fromRGB(255, 182, 255)
+local colorLava     = Color3.fromRGB(255, 94, 0)
+local colorNone     = Color3.fromRGB(163, 162, 165)
+local COLOR_EPSILON = 0.02
+
+--// Ranking of all brainrots (gods first, then ranked/secrets)
+local brainrotRanking = {
+    ["Cocofanto Elefanto"] = 1,
+    ["Girafa Celestre"] = 2,
+    ["Matteo"] = 3,
+    ["Tralalero Tralala"] = 4,
+    ["Odin Din Din Dun"] = 5,
+    ["Unclito Samito"] = 6,
+    ["Trenostruzzo Turbo 3000"] = 7,
+    ["Brainrot God Lucky Block"] = 8,
+    ["Ballerino Lololo"] = 9,
+    ["Los Crocodillitos"] = 10,
+    ["Piccione Macchina"] = 11,
+    ["Trippi Troppi Troppa Trippa"] = 12,
+    ["Bulbito Bandito Traktorito"] = 13,
+    ["Los Orcalitos"] = 14,
+    ["Tigroligre Frutonni"] = 15,
+    ["Espresso Signora"] = 16,
+    ["Orcalero Orcala"] = 17,
+    ["Pakrahmatmamat"] = 18,
+    ["Tartaruga Cisterna"] = 19,
+    ["Alessio"] = 20,
+    ["Brr es Teh Patipum"] = 21,
+    ["Los Bombinitos"] = 22,
+
+    ["Garama And Madundung"] = 23,
+    ["La Grande Combinasion"] = 24,
+    ["Secret Lucky Block"] = 25,
+    ["Pot Hotspot"] = 26,
+    ["Graipuss Medussi"] = 27,
+    ["Sammyni Spyderini"] = 28,
+
+    ["Los Tralaleritos"] = 29,
+    ["Las Tralaleritas"] = 30,
+    ["Torrtuginni Dragonfrutini"] = 31,
+    ["La Vacca Saturno Saturnita"] = 32,
+    ["Dragon Cannelloni"] = 33,
+    ["Esok Sekolah"] = 34,
+    ["Los Hotspotsitos"] = 35,
+    ["Nuclearo Dinossauro"] = 36,
+    ["Los Combinasionas"] = 37,
+    ["Chicleteira Bicicleteira"] = 38,
+    ["Las Vaquitas Saturnitas"] = 39,
+    ["Job Job Job Sahur"] = 40,
+    ["Agarrini La Palini"] = 41,
+    ["Chimpanzini Spiderini"] = 42,
+    ["Sammyini Spidreini"] = 43,
+    ["Los Matteos"] = 44,
+    ["Karkerkar Kurkur"] = 45,
+    ["Dul Dul Dul"] = 46,
+    ["Blackhole Goat"] = 47,
+    ["La Supreme Combinasion"] = 48,
+    ["Bisonte Giuppitere"] = 49,
+    ["Ketupat Kepat"] = 50,
+}
+
+--// Brainrot Gods (gold ESP)
+local brainrotGods = {
+    ["Cocofanto Elefanto"] = true,
+    ["Girafa Celestre"] = true,
+    ["Matteo"] = true,
+    ["Tralalero Tralala"] = true,
+    ["Odin Din Din Dun"] = true,
+    ["Unclito Samito"] = true,
+    ["Trenostruzzo Turbo 3000"] = true,
+    ["Brainrot God Lucky Block"] = true,
+    ["Ballerino Lololo"] = true,
+    ["Los Crocodillitos"] = true,
+    ["Piccione Macchina"] = true,
+    ["Trippi Troppi Troppa Trippa"] = true,
+    ["Bulbito Bandito Traktorito"] = true,
+    ["Los Orcalitos"] = true,
+    ["Tigroligre Frutonni"] = true,
+    ["Espresso Signora"] = true,
+    ["Orcalero Orcala"] = true,
+    ["Pakrahmatmamat"] = true,
+    ["Tartaruga Cisterna"] = true,
+    ["Alessio"] = true,
+    ["Brr es Teh Patipum"] = true,
+    ["Los Bombinitos"] = true,
+}
+
+--// Secrets list (green ESP)
+local brainrotSecrets = {
+    ["Dragon Cannelloni"] = true,
+    ["Garama And Madundung"] = true,
+    ["Esok Sekolah"] = true,
+    ["Los Hotspotsitos"] = true,
+    ["Nuclearo Dinossauro"] = true,
+    ["Los Combinasionas"] = true,
+    ["La Grande Combinasion"] = true,
+    ["Chicleteira Bicicleteira"] = true,
+    ["Secret Lucky Block"] = true,
+    ["Pot Hotspot"] = true,
+    ["Graipuss Medussi"] = true,
+    ["Las Vaquitas Saturnitas"] = true,
+    ["Job Job Job Sahur"] = true,
+    ["Las Tralaleritas"] = true,
+    ["Los Tralaleritos"] = true,
+    ["Agarrini La Palini"] = true,
+    ["Torrtuginni Dragonfrutini"] = true,
+    ["Chimpanzini Spiderini"] = true,
+    ["Sammyini Spidreini"] = true,
+    ["Los Matteos"] = true,
+    ["Karkerkar Kurkur"] = true,
+    ["La Vacca Saturno Saturnita"] = true,
+    ["Dul Dul Dul"] = true,
+    ["Blackhole Goat"] = true,
+    ["La Supreme Combinasion"] = true,
+    ["Bisonte Giuppitere"] = true,
+    ["Ketupat Kepat"] = true,
+}
+
+--// Tools to buy
+local toolsToBuy = {
+    "Invisibility Cloak", "Medusa's Head", "Quantum Cloner",
+    "All Seeing Sentry", "Body Swap Potion", "Rainbowrath Sword"
+}
+
+--// Purchase remote
+local BuyRemote = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/CoinsShopService/RequestBuy")
+
+--// Default global configuration for the finder and mutation options (will be merged with user-provided table)
+getgenv().BrainrotConfig = getgenv().BrainrotConfig or {}
+local cfg = getgenv().BrainrotConfig
+
+-- Ensure top-level globals exist and set defaults
+if type(cfg.Enabled) ~= "boolean" then cfg.Enabled = true end
+if type(cfg.ShowMutations) ~= "boolean" then cfg.ShowMutations = true end
+cfg.TargetMutation = cfg.TargetMutation or nil
+cfg.AllowedMutations = cfg.AllowedMutations or {}
+cfg.CustomMutationColors = cfg.CustomMutationColors or {
+    ["gold"] = colorGold,
+    ["diamond"] = colorDiamond,
+    ["candy"] = colorCandy,
+    ["lava"] = colorLava,
+    ["none"] = colorNone,
+}
+
+-- If user provided a bunch of per-brainrot entries, build a lowercase lookup for them
+local perBrainrotConfig = {}
+for k, v in pairs(cfg) do
+    if type(k) == "string" and type(v) == "table" then
+        perBrainrotConfig[string.lower(k)] = v
+    end
+end
+
+--// Utility: Title Case a given string (for display of secrets/canonical names)
+local function titleCase(s)
+    if not s or s == "" then return s end
+    local parts = {}
+    for word in s:gmatch("%S+") do
+        local first = word:sub(1,1):upper()
+        local rest = word:sub(2):lower()
+        table.insert(parts, first .. rest)
+    end
+    return table.concat(parts, " ")
+end
+
+--// Build case-insensitive lookup maps (lowercase key -> canonical display name / data)
+local rankLookup = {}
+local rankDisplay = {}
+for name, rank in pairs(brainrotRanking) do
+    local key = string.lower(name)
+    rankLookup[key] = rank
+    rankDisplay[key] = name
+end
+
+local godLookup = {}
+local godDisplay = {}
+for name, v in pairs(brainrotGods) do
+    local key = string.lower(name)
+    godLookup[key] = true
+    godDisplay[key] = name
+end
+
+local secretLookup = {}
+local secretDisplay = {}
+for name, v in pairs(brainrotSecrets) do
+    local key = string.lower(name)
+    secretLookup[key] = true
+    secretDisplay[key] = titleCase(name)
+end
+
+--// compare closeness of colors
+local function colorsAreClose(a, b)
+    return math.abs(a.R - b.R) < COLOR_EPSILON
+       and math.abs(a.G - b.G) < COLOR_EPSILON
+       and math.abs(a.B - b.B) < COLOR_EPSILON
+end
+
+--// Normalize mutation name (strip emoji, punctuation, lower)
+local function normalizeMutationName(name)
+    if not name then return "" end
+    -- remove emoji characters (simple approach: remove non-alphanumeric and spaces)
+    local s = tostring(name):gsub("[^%w%s]", "")
+    s = s:match("%S.*%S") or s
+    return string.lower(s or "")
+end
+
+--// Determine mutation name by checking a BasePart's Color
+local function getMutation(rootPart)
+    if not rootPart or not rootPart.Color then return "⚪ None" end
+    local col = rootPart.Color
+
+    if colorsAreClose(col, cfg.CustomMutationColors["gold"]) then
+        return "🌕 Gold"
+    elseif colorsAreClose(col, cfg.CustomMutationColors["diamond"]) then
+        return "💎 Diamond"
+    elseif colorsAreClose(col, cfg.CustomMutationColors["candy"]) then
+        return "🍬 Candy"
+    elseif colorsAreClose(col, cfg.CustomMutationColors["lava"]) then
+        return "🌋 Lava"
+    elseif colorsAreClose(col, cfg.CustomMutationColors["none"]) then
+        return "⚪ None"
+    else
+        -- attempt to match against any custom colors user added
+        for k, v in pairs(cfg.CustomMutationColors) do
+            if colorsAreClose(col, v) then
+                return titleCase(k)
+            end
+        end
+        return "⚪ None"
+    end
+end
+
+--// Map mutation text to a color3 for ESP boxes
+local function mutationColorForName(mut)
+    local n = normalizeMutationName(mut)
+    if n == "gold" then return cfg.CustomMutationColors["gold"] end
+    if n == "diamond" then return cfg.CustomMutationColors["diamond"] end
+    if n == "candy" then return cfg.CustomMutationColors["candy"] end
+    if n == "lava" then return cfg.CustomMutationColors["lava"] end
+    if n == "none" or n == "" then return cfg.CustomMutationColors["none"] end
+    -- fallback: if user provided custom color mapping
+    for k, v in pairs(cfg.CustomMutationColors) do
+        if normalizeMutationName(k) == n then return v end
+    end
+    return cfg.CustomMutationColors["none"]
+end
+
+--// ESP highlight function (adds Box + Billboard). Accepts mutation text.
+local function highlight(part, displayName, isGod, mutationText)
+    if not part or not part.Parent then return end
+    if part:FindFirstChild("BrainrotBox") then return end
+
+    -- Box
+    local box = Instance.new("BoxHandleAdornment")
+    box.Size = part.Size * 1.25
+    box.Adornee = part
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    local boxColor = isGod and colorGold or (mutationColorForName(mutationText) or Color3.new(0,1,0))
+    box.Color3 = boxColor
+    box.Transparency = 0.2
+    box.Name = "BrainrotBox"
+    box.Parent = part
+
+    -- Billboard
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "BrainrotLabel"
+    billboard.Adornee = part
+    billboard.AlwaysOnTop = true
+    billboard.Size = UDim2.new(0, 220, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, part.Size.Y * 1.5, 0)
+    billboard.Parent = part
+
+    local label = Instance.new("TextLabel", billboard)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.TextScaled = true
+    label.TextStrokeTransparency = 0
+    label.TextColor3 = boxColor
+
+    local titleText
+    if isGod then
+        titleText = "Brainrot God - " .. displayName
+    else
+        titleText = "Secret - " .. displayName
+    end
+    if cfg.ShowMutations and mutationText then
+        titleText = titleText .. " (" .. mutationText .. ")"
+    end
+    label.Text = titleText
+end
+
+--// Auto-buy the tools
+local function autoBuyTools()
+    for _, toolName in ipairs(toolsToBuy) do
+        pcall(function()
+            BuyRemote:InvokeServer(toolName)
+        end)
+        task.wait(1.6)
+    end
+end
+
+--// GUI display when found (now shows whether it's a God or Secret + mutation)
+local function showFoundGui(foundGod, foundSecret, mutationText)
+    local gui = LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("SecretFinderGUI")
+    if gui then gui:Destroy() end
+
+    gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+    gui.Name = "SecretFinderGUI"
+    gui.ResetOnSpawn = false
+
+    local frame = Instance.new("Frame", gui)
+    frame.Size = UDim2.new(0, 320, 0, 160)
+    frame.Position = UDim2.new(0.5, -160, 0.4, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    frame.BorderSizePixel = 0
+    frame.AnchorPoint = Vector2.new(0.5, 0)
+
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Text = "✅ Found!"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextScaled = true
+
+    local subtitle = Instance.new("TextLabel", frame)
+    subtitle.Size = UDim2.new(1, -20, 0, 36)
+    subtitle.Position = UDim2.new(0, 10, 0, 44)
+    subtitle.Text = (foundGod and "Brainrot God detected in this server." or "") .. ((foundGod and foundSecret) and " " or "") .. (foundSecret and "Secret detected in this server." or "")
+    subtitle.TextColor3 = Color3.fromRGB(220, 220, 220)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextWrapped = true
+    subtitle.TextScaled = true
+
+    local mutationLabel = Instance.new("TextLabel", frame)
+    mutationLabel.Size = UDim2.new(1, -20, 0, 28)
+    mutationLabel.Position = UDim2.new(0, 10, 0, 84)
+    mutationLabel.Text = (mutationText and ("Mutation: " .. mutationText) or "Mutation: ⚪ None")
+    mutationLabel.TextColor3 = Color3.fromRGB(235,235,235)
+    mutationLabel.BackgroundTransparency = 1
+    mutationLabel.Font = Enum.Font.Gotham
+    mutationLabel.TextScaled = true
+
+    local buyBtn = Instance.new("TextButton", frame)
+    buyBtn.Size = UDim2.new(0.45, 0, 0, 36)
+    buyBtn.Position = UDim2.new(0.05, 0, 0.85, 0)
+    buyBtn.Text = "Buy Tools"
+    buyBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+    buyBtn.Font = Enum.Font.SourceSansBold
+    buyBtn.TextColor3 = Color3.new(1, 1, 1)
+    buyBtn.TextScaled = true
+
+    local ignoreBtn = Instance.new("TextButton", frame)
+    ignoreBtn.Size = UDim2.new(0.45, 0, 0, 36)
+    ignoreBtn.Position = UDim2.new(0.5, 0, 0.85, 0)
+    ignoreBtn.Text = "Ignore"
+    ignoreBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+    ignoreBtn.Font = Enum.Font.SourceSansBold
+    ignoreBtn.TextColor3 = Color3.new(1, 1, 1)
+    ignoreBtn.TextScaled = true
+
+    buyBtn.MouseButton1Click:Connect(function()
+        autoBuyTools()
+        gui:Destroy()
+    end)
+    ignoreBtn.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+end
+
+--// Random shuffle function
+local function shuffle(tbl)
+    for i = #tbl, 2, -1 do
+        local j = math.floor(((math.random() * 7.1) % i) + 1)
+        tbl[i], tbl[j] = tbl[j], tbl[i]
+    end
+end
+
+--// Server hop to new instance
+local function serverHop()
+    StarterGui:SetCore("SendNotification", {
+        Title = "Hopping...",
+        Text = "Searching for brainrot...",
+        Duration = 3
+    })
+
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. allowedPlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+    end)
+
+    if not success or typeof(result) ~= "table" or typeof(result.data) ~= "table" then
+        task.delay(0.1, serverHop)
+        return
+    end
+
+    local servers = {}
+    for _, server in ipairs(result.data) do
+        if server and server.id and typeof(server.id) == "string" then
+            table.insert(servers, server)
+        end
+    end
+
+    shuffle(servers)
+
+    for _, server in ipairs(servers) do
+        local id = server.id
+        if tostring(id) ~= tostring(game.JobId) and not getgenv().VisitedServers[id] then
+            getgenv().VisitedServers[id] = true
+            TeleportService:TeleportToPlaceInstance(allowedPlaceId, id, LocalPlayer)
+            return
+        end
+    end
+
+    task.delay(0.1, serverHop)
+
+end
+
+--// Main detection logic (case-insensitive, displays Title Case for secrets, supports mutation filtering and per-brainrot config)
+local function findTopBrainrots()
+    if not cfg.Enabled then return end
+
+    local foundOne = false
+    local foundSecret = false
+    local foundGod = false
+    local uniqueNames = {}
+    local foundMutationText = nil
+
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and getgenv().BrainrotConfig then
+            local nameLower = string.lower(obj.Name)
+            local matched = false
+            local isGod = false
+            local displayName
+
+            if godLookup[nameLower] then
+                isGod = true
+                matched = true
+                displayName = godDisplay[nameLower] or obj.Name
+            elseif secretLookup[nameLower] then
+                matched = true
+                displayName = secretDisplay[nameLower] or titleCase(obj.Name)
+            elseif rankLookup[nameLower] then
+                matched = true
+                displayName = rankDisplay[nameLower] or obj.Name
+            end
+
+            if matched and not uniqueNames[nameLower] then
+                local basePart = obj:FindFirstChildWhichIsA("BasePart")
+                if basePart then
+                    -- detect mutation
+                    local mutation = getMutation(basePart)
+                    local normalized = normalizeMutationName(mutation)
+
+                    -- Per-brainrot config check (if provided)
+                    local perCfg = perBrainrotConfig[nameLower]
+                    if perCfg then
+                        -- If explicitly disabled, skip
+                        if perCfg.Enabled == false then
+                            continue
+                        end
+                        -- If per-brainrot mutation is set and not "None", enforce it
+                        if type(perCfg.Mutation) == "string" and string.lower(perCfg.Mutation) ~= "none" then
+                            if normalizeMutationName(perCfg.Mutation) ~= normalized then
+                                continue
+                            end
+                        end
+                    else
+                        -- Global TargetMutation: if non-nil, only accept brainrots with that mutation
+                        if cfg.TargetMutation and cfg.TargetMutation ~= "" then
+                            if normalizeMutationName(cfg.TargetMutation) ~= normalized then
+                                continue
+                            end
+                        end
+
+                        -- Global AllowedMutations table: if non-empty, require normalized to be in set
+                        if next(cfg.AllowedMutations) ~= nil then
+                            if not cfg.AllowedMutations[normalized] then
+                                continue
+                            end
+                        end
+                    end
+
+                    uniqueNames[nameLower] = true
+                    highlight(basePart, displayName, isGod, mutation)
+                    foundOne = true
+                    foundMutationText = mutation or "⚪ None"
+                    if isGod then
+                        foundGod = true
+                    else
+                        foundSecret = foundSecret or secretLookup[nameLower] or false
+                    end
+                end
+            end
+        end
+    end
+
+    if foundOne then
+        showFoundGui(foundGod, foundSecret, foundMutationText)
+    else
+        task.wait(0.1)
+        serverHop()
+    end
+
+end
+
+--// Prevent rerun same server with known brainrot (respects per-brainrot Enabled flag)
+local alreadyFound = false
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if obj:IsA("Model") and getgenv().BrainrotConfig then
+        local nl = string.lower(obj.Name)
+        if rankLookup[nl] or secretLookup[nl] or godLookup[nl] then
+            local perCfg = perBrainrotConfig[nl]
+            if perCfg and perCfg.Enabled == false then
+                -- explicitly disabled, ignore
+            else
+                alreadyFound = true
+                break
+            end
+        end
+    end
+end
+
+--// Initialize VisitedServers storage
+getgenv().VisitedServers = getgenv().VisitedServers or {}
+
+--// Start
+if alreadyFound then
+    task.wait(0.1)
+    serverHop()
+else
+    task.wait(0.1)
+    findTopBrainrots()
+end
