@@ -1,4 +1,4 @@
--- Brainrot Finder (Fully merged) - Draggable GUI, "None" = any (prioritize Lava), no shuffle, infinite spam-hop every 0.1s until target found
+-- Brainrot Finder (Fully merged) - Modified: "None" = any mutation (prioritize Lava), no shuffle, infinite spam-hop every 0.1s until target found
 -- Place this script into a local/exploit executor context for PlaceId 109983668079237
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -9,7 +9,6 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 local allowedPlaceId = 109983668079237
@@ -224,19 +223,19 @@ end
 
 --// Determine mutation name by checking a BasePart's Color
 local function getMutation(rootPart)
-    if not rootPart or not rootPart.Color then return "âšª None" end
+    if not rootPart or not rootPart.Color then return "⚪ None" end
     local col = rootPart.Color
 
     if colorsAreClose(col, cfg.CustomMutationColors["gold"]) then
-        return "ðŸŒ• Gold"
+        return "🌕 Gold"
     elseif colorsAreClose(col, cfg.CustomMutationColors["diamond"]) then
-        return "ðŸ’Ž Diamond"
+        return "💎 Diamond"
     elseif colorsAreClose(col, cfg.CustomMutationColors["candy"]) then
-        return "ðŸ¬ Candy"
+        return "🍬 Candy"
     elseif colorsAreClose(col, cfg.CustomMutationColors["lava"]) then
-        return "ðŸŒ‹ Lava"
+        return "🌋 Lava"
     elseif colorsAreClose(col, cfg.CustomMutationColors["none"]) then
-        return "âšª None"
+        return "⚪ None"
     else
         -- attempt to match against any custom colors user added
         for k, v in pairs(cfg.CustomMutationColors) do
@@ -244,7 +243,7 @@ local function getMutation(rootPart)
                 return titleCase(k)
             end
         end
-        return "âšª None"
+        return "⚪ None"
     end
 end
 
@@ -319,13 +318,12 @@ local function autoBuyTools()
     end
 end
 
---// Draggable GUI display when found (shows whether it's a God or Secret + mutation)
+--// GUI display when found (now shows whether it's a God or Secret + mutation)
 local function showFoundGui(foundGod, foundSecret, mutationText)
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-    local gui = playerGui:FindFirstChild("SecretFinderGUI")
+    local gui = LocalPlayer:FindFirstChild("PlayerGui"):FindFirstChild("SecretFinderGUI")
     if gui then gui:Destroy() end
 
-    gui = Instance.new("ScreenGui", playerGui)
+    gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
     gui.Name = "SecretFinderGUI"
     gui.ResetOnSpawn = false
 
@@ -335,19 +333,14 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
     frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     frame.BorderSizePixel = 0
     frame.AnchorPoint = Vector2.new(0.5, 0)
-    frame.ZIndex = 5
-    frame.Active = true
-    frame.ClipsDescendants = false
 
     local title = Instance.new("TextLabel", frame)
     title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0,0,0,0)
-    title.Text = "âœ… Found!"
+    title.Text = "✅ Found!"
     title.TextColor3 = Color3.fromRGB(255, 255, 255)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
     title.TextScaled = true
-    title.ZIndex = 6
 
     local subtitle = Instance.new("TextLabel", frame)
     subtitle.Size = UDim2.new(1, -20, 0, 36)
@@ -358,17 +351,15 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextWrapped = true
     subtitle.TextScaled = true
-    subtitle.ZIndex = 6
 
     local mutationLabel = Instance.new("TextLabel", frame)
     mutationLabel.Size = UDim2.new(1, -20, 0, 28)
     mutationLabel.Position = UDim2.new(0, 10, 0, 84)
-    mutationLabel.Text = (mutationText and ("Mutation: " .. mutationText) or "Mutation: âšª None")
+    mutationLabel.Text = (mutationText and ("Mutation: " .. mutationText) or "Mutation: ⚪ None")
     mutationLabel.TextColor3 = Color3.fromRGB(235,235,235)
     mutationLabel.BackgroundTransparency = 1
     mutationLabel.Font = Enum.Font.Gotham
     mutationLabel.TextScaled = true
-    mutationLabel.ZIndex = 6
 
     local buyBtn = Instance.new("TextButton", frame)
     buyBtn.Size = UDim2.new(0.45, 0, 0, 36)
@@ -378,7 +369,6 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
     buyBtn.Font = Enum.Font.SourceSansBold
     buyBtn.TextColor3 = Color3.new(1, 1, 1)
     buyBtn.TextScaled = true
-    buyBtn.ZIndex = 7
 
     local ignoreBtn = Instance.new("TextButton", frame)
     ignoreBtn.Size = UDim2.new(0.45, 0, 0, 36)
@@ -388,7 +378,6 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
     ignoreBtn.Font = Enum.Font.SourceSansBold
     ignoreBtn.TextColor3 = Color3.new(1, 1, 1)
     ignoreBtn.TextScaled = true
-    ignoreBtn.ZIndex = 7
 
     buyBtn.MouseButton1Click:Connect(function()
         autoBuyTools()
@@ -398,46 +387,6 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
         gui:Destroy()
     end)
 
-    -- DRAG LOGIC (works with mouse and touch)
-    local dragging = false
-    local dragInput, dragStart, startPos
-
-    local function updatePosition(input)
-        if not dragging or not dragStart or not startPos then return end
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            updatePosition(input)
-        end
-    end)
 end
 
 --// Server hop to new instance - MODIFIED: no shuffle, continuous spam-hop every 0.1s until stopped by detection
@@ -596,7 +545,7 @@ local function findTopBrainrots()
         if info and info.part and info.part.Parent then
             highlight(info.part, info.displayName, info.isGod, info.mutation)
             foundOne = true
-            foundMutationText = info.mutation or "âšª None"
+            foundMutationText = info.mutation or "⚪ None"
             if info.isGod then
                 foundGod = true
             else
