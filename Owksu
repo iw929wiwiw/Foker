@@ -1,4 +1,5 @@
--- Brainrot Finder (Fully merged) - Modified: "None" = any mutation (prioritize Lava), no shuffle, infinite spam-hop every 0.1s until target found
+-- Brainrot Finder (Fixed) - Normalizes names and config keys so Gods, Secrets, and Ranked brainrots
+-- are matched case-insensitively and with common name variants (e.g. trims, removes (Clone)).
 -- Place this script into a local/exploit executor context for PlaceId 109983668079237
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -45,14 +46,12 @@ local brainrotRanking = {
     ["Alessio"] = 20,
     ["Brr es Teh Patipum"] = 21,
     ["Los Bombinitos"] = 22,
-
     ["Garama And Madundung"] = 23,
     ["La Grande Combinasion"] = 24,
     ["Secret Lucky Block"] = 25,
     ["Pot Hotspot"] = 26,
     ["Graipuss Medussi"] = 27,
     ["Sammyni Spyderini"] = 28,
-
     ["Los Tralaleritos"] = 29,
     ["Las Tralaleritas"] = 30,
     ["Torrtuginni Dragonfrutini"] = 31,
@@ -135,10 +134,7 @@ local brainrotSecrets = {
 }
 
 --// Tools to buy
-local toolsToBuy = {
-    "Invisibility Cloak", "Medusa's Head", "Quantum Cloner",
-    "All Seeing Sentry", "Body Swap Potion", "Rainbowrath Sword"
-}
+local toolsToBuy = { "Invisibility Cloak", "Medusa's Head", "Quantum Cloner", "All Seeing Sentry", "Body Swap Potion", "Rainbowrath Sword" }
 
 --// Purchase remote
 local BuyRemote = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RF/CoinsShopService/RequestBuy")
@@ -160,12 +156,19 @@ cfg.CustomMutationColors = cfg.CustomMutationColors or {
     ["none"] = colorNone,
 }
 
--- If user provided a bunch of per-brainrot entries, build a lowercase lookup for them
-local perBrainrotConfig = {}
-for k, v in pairs(cfg) do
-    if type(k) == "string" and type(v) == "table" then
-        perBrainrotConfig[string.lower(k)] = v
-    end
+--// Utility: robust normalize for names (trim, remove parentheses, collapse spaces, lowercase)
+local function normalizeName(s)
+    if not s then return "" end
+    s = tostring(s)
+    -- trim
+    s = s:match("^%s*(.-)%s*$") or s
+    -- remove content inside parentheses (e.g. "Name (Clone)")
+    s = s:gsub("%b()", "")
+    -- collapse multiple whitespace into single space
+    s = s:gsub("%s+", " ")
+    -- remove leading/trailing again
+    s = s:match("^%s*(.-)%s*$") or s
+    return string.lower(s)
 end
 
 --// Utility: Title Case a given string (for display of secrets/canonical names)
@@ -180,11 +183,11 @@ local function titleCase(s)
     return table.concat(parts, " ")
 end
 
---// Build case-insensitive lookup maps (lowercase key -> canonical display name / data)
+--// Build case-insensitive lookup maps (normalized key -> canonical display name / data)
 local rankLookup = {}
 local rankDisplay = {}
 for name, rank in pairs(brainrotRanking) do
-    local key = string.lower(name)
+    local key = normalizeName(name)
     rankLookup[key] = rank
     rankDisplay[key] = name
 end
@@ -192,7 +195,7 @@ end
 local godLookup = {}
 local godDisplay = {}
 for name, v in pairs(brainrotGods) do
-    local key = string.lower(name)
+    local key = normalizeName(name)
     godLookup[key] = true
     godDisplay[key] = name
 end
@@ -200,9 +203,17 @@ end
 local secretLookup = {}
 local secretDisplay = {}
 for name, v in pairs(brainrotSecrets) do
-    local key = string.lower(name)
+    local key = normalizeName(name)
     secretLookup[key] = true
     secretDisplay[key] = titleCase(name)
+end
+
+-- If user provided a bunch of per-brainrot entries, build a normalized lookup for them
+local perBrainrotConfig = {}
+for k, v in pairs(cfg) do
+    if type(k) == "string" and type(v) == "table" then
+        perBrainrotConfig[normalizeName(k)] = v
+    end
 end
 
 --// compare closeness of colors
@@ -225,7 +236,6 @@ end
 local function getMutation(rootPart)
     if not rootPart or not rootPart.Color then return "⚪ None" end
     local col = rootPart.Color
-
     if colorsAreClose(col, cfg.CustomMutationColors["gold"]) then
         return "🌕 Gold"
     elseif colorsAreClose(col, cfg.CustomMutationColors["diamond"]) then
@@ -237,7 +247,6 @@ local function getMutation(rootPart)
     elseif colorsAreClose(col, cfg.CustomMutationColors["none"]) then
         return "⚪ None"
     else
-        -- attempt to match against any custom colors user added
         for k, v in pairs(cfg.CustomMutationColors) do
             if colorsAreClose(col, v) then
                 return titleCase(k)
@@ -255,7 +264,6 @@ local function mutationColorForName(mut)
     if n == "candy" then return cfg.CustomMutationColors["candy"] end
     if n == "lava" then return cfg.CustomMutationColors["lava"] end
     if n == "none" or n == "" then return cfg.CustomMutationColors["none"] end
-    -- fallback: if user provided custom color mapping
     for k, v in pairs(cfg.CustomMutationColors) do
         if normalizeMutationName(k) == n then return v end
     end
@@ -267,7 +275,6 @@ local function highlight(part, displayName, isGod, mutationText)
     if not part or not part.Parent then return end
     if part:FindFirstChild("BrainrotBox") then return end
 
-    -- Box
     local box = Instance.new("BoxHandleAdornment")
     box.Size = part.Size * 1.25
     box.Adornee = part
@@ -279,7 +286,6 @@ local function highlight(part, displayName, isGod, mutationText)
     box.Name = "BrainrotBox"
     box.Parent = part
 
-    -- Billboard
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "BrainrotLabel"
     billboard.Adornee = part
@@ -386,14 +392,11 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
     ignoreBtn.MouseButton1Click:Connect(function()
         gui:Destroy()
     end)
-
 end
 
 --// Server hop to new instance - MODIFIED: no shuffle, continuous spam-hop every 0.1s until stopped by detection
 local function serverHop()
-    -- ensure visited storage exists
     getgenv().VisitedServers = getgenv().VisitedServers or {}
-    -- ensure stop flag is false
     getgenv().StopHopping = false
 
     while not getgenv().StopHopping do
@@ -414,21 +417,17 @@ local function serverHop()
                     local id = server.id
                     if tostring(id) ~= tostring(game.JobId) and not getgenv().VisitedServers[id] then
                         getgenv().VisitedServers[id] = true
-                        -- teleport to this server instance; script will continue in the new instance (or keep spamming if not found)
                         pcall(function()
                             TeleportService:TeleportToPlaceInstance(allowedPlaceId, id, LocalPlayer)
                         end)
-                        -- spam-wait between teleports as requested
                         task.wait(0.1)
                     end
                 end
             end
         else
-            -- failed to fetch servers: wait briefly then try again
             task.wait(0.1)
         end
 
-        -- small pause to avoid tight infinite loop when server list exhausted
         task.wait(0.1)
     end
 end
@@ -447,7 +446,7 @@ local function findTopBrainrots()
 
     for _, obj in ipairs(Workspace:GetChildren()) do
         if obj:IsA("Model") and getgenv().BrainrotConfig then
-            local nameLower = string.lower(obj.Name)
+            local nameLower = normalizeName(obj.Name)
             local matched = false
             local isGod = false
             local displayName
@@ -487,7 +486,6 @@ local function findTopBrainrots()
                                 -- per-brainrot wildcard: accept any mutation (override global filters)
                                 allowedThisInstance = true
                             else
-                                -- requires specific mutation
                                 if normalizeMutationName(perMutRaw) == normalized then
                                     allowedThisInstance = true
                                 else
@@ -569,7 +567,7 @@ end
 local alreadyFound = false
 for _, obj in ipairs(Workspace:GetChildren()) do
     if obj:IsA("Model") and getgenv().BrainrotConfig then
-        local nl = string.lower(obj.Name)
+        local nl = normalizeName(obj.Name)
         if rankLookup[nl] or secretLookup[nl] or godLookup[nl] then
             local perCfg = perBrainrotConfig[nl]
             if perCfg and perCfg.Enabled == false then
