@@ -1,5 +1,4 @@
--- Brainrot Finder (Fully merged)
--- Supports both the original global config style AND a per-brainrot config table
+-- Brainrot Finder (Fully merged) - Modified: "None" = any mutation (prioritize Lava), no shuffle, infinite spam-hop every 0.1s until target found
 -- Place this script into a local/exploit executor context for PlaceId 109983668079237
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -390,51 +389,48 @@ local function showFoundGui(foundGod, foundSecret, mutationText)
 
 end
 
---// Random shuffle function
-local function shuffle(tbl)
-    for i = #tbl, 2, -1 do
-        local j = math.floor(((math.random() * 7.1) % i) + 1)
-        tbl[i], tbl[j] = tbl[j], tbl[i]
-    end
-end
-
---// Server hop to new instance
+--// Server hop to new instance - MODIFIED: no shuffle, continuous spam-hop every 0.1s until stopped by detection
 local function serverHop()
-    StarterGui:SetCore("SendNotification", {
-        Title = "Hopping...",
-        Text = "Searching for brainrot...",
-        Duration = 3
-    })
+    -- ensure visited storage exists
+    getgenv().VisitedServers = getgenv().VisitedServers or {}
+    -- ensure stop flag is false
+    getgenv().StopHopping = false
 
-    local success, result = pcall(function()
-        return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. allowedPlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
-    end)
+    while not getgenv().StopHopping do
+        StarterGui:SetCore("SendNotification", {
+            Title = "Hopping...",
+            Text = "Searching for brainrot...",
+            Duration = 1
+        })
 
-    if not success or typeof(result) ~= "table" or typeof(result.data) ~= "table" then
-        task.delay(0.1, serverHop)
-        return
-    end
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. allowedPlaceId .. "/servers/Public?sortOrder=Asc&limit=100"))
+        end)
 
-    local servers = {}
-    for _, server in ipairs(result.data) do
-        if server and server.id and typeof(server.id) == "string" then
-            table.insert(servers, server)
+        if success and typeof(result) == "table" and typeof(result.data) == "table" then
+            for _, server in ipairs(result.data) do
+                if getgenv().StopHopping then break end
+                if server and server.id and typeof(server.id) == "string" then
+                    local id = server.id
+                    if tostring(id) ~= tostring(game.JobId) and not getgenv().VisitedServers[id] then
+                        getgenv().VisitedServers[id] = true
+                        -- teleport to this server instance; script will continue in the new instance (or keep spamming if not found)
+                        pcall(function()
+                            TeleportService:TeleportToPlaceInstance(allowedPlaceId, id, LocalPlayer)
+                        end)
+                        -- spam-wait between teleports as requested
+                        task.wait(0.1)
+                    end
+                end
+            end
+        else
+            -- failed to fetch servers: wait briefly then try again
+            task.wait(0.1)
         end
+
+        -- small pause to avoid tight infinite loop when server list exhausted
+        task.wait(0.1)
     end
-
-    shuffle(servers)
-
-    for _, server in ipairs(servers) do
-        local id = server.id
-        if tostring(id) ~= tostring(game.JobId) and not getgenv().VisitedServers[id] then
-            getgenv().VisitedServers[id] = true
-            TeleportService:TeleportToPlaceInstance(allowedPlaceId, id, LocalPlayer)
-            return
-        end
-    end
-
-    task.delay(0.1, serverHop)
-
 end
 
 --// Main detection logic (case-insensitive, displays Title Case for secrets, supports mutation filtering and per-brainrot config)
@@ -444,8 +440,10 @@ local function findTopBrainrots()
     local foundOne = false
     local foundSecret = false
     local foundGod = false
-    local uniqueNames = {}
     local foundMutationText = nil
+
+    -- Collect the best candidate per brainrot name (so we can prioritize Lava when multiple instances exist)
+    local candidates = {} -- [nameLower] = { part = basePart, mutation = mutationText, normalized = normalized, isGod = bool, displayName = string }
 
     for _, obj in ipairs(Workspace:GetChildren()) do
         if obj:IsA("Model") and getgenv().BrainrotConfig then
@@ -466,63 +464,105 @@ local function findTopBrainrots()
                 displayName = rankDisplay[nameLower] or obj.Name
             end
 
-            if matched and not uniqueNames[nameLower] then
+            if matched then
                 local basePart = obj:FindFirstChildWhichIsA("BasePart")
-                if basePart then
-                    -- detect mutation
+                if not basePart then
+                    -- no basepart, skip
+                else
                     local mutation = getMutation(basePart)
                     local normalized = normalizeMutationName(mutation)
 
-                    -- Per-brainrot config check (if provided)
                     local perCfg = perBrainrotConfig[nameLower]
+
+                    -- decide whether this particular instance is allowed
+                    local allowedThisInstance = false
+
                     if perCfg then
-                        -- If explicitly disabled, skip
                         if perCfg.Enabled == false then
-                            continue
-                        end
-                        -- If per-brainrot mutation is set and not "None", enforce it
-                        if type(perCfg.Mutation) == "string" and string.lower(perCfg.Mutation) ~= "none" then
-                            if normalizeMutationName(perCfg.Mutation) ~= normalized then
-                                continue
+                            allowedThisInstance = false
+                        else
+                            local perMutRaw = type(perCfg.Mutation) == "string" and perCfg.Mutation or "None"
+                            local perMut = string.lower(perMutRaw)
+                            if perMut == "none" or perMut == "any" then
+                                -- per-brainrot wildcard: accept any mutation (override global filters)
+                                allowedThisInstance = true
+                            else
+                                -- requires specific mutation
+                                if normalizeMutationName(perMutRaw) == normalized then
+                                    allowedThisInstance = true
+                                else
+                                    allowedThisInstance = false
+                                end
                             end
                         end
                     else
-                        -- Global TargetMutation: if non-nil, only accept brainrots with that mutation
+                        -- no per-brainrot config: apply global filters
+                        local passesGlobal = true
                         if cfg.TargetMutation and cfg.TargetMutation ~= "" then
                             if normalizeMutationName(cfg.TargetMutation) ~= normalized then
-                                continue
+                                passesGlobal = false
                             end
                         end
-
-                        -- Global AllowedMutations table: if non-empty, require normalized to be in set
-                        if next(cfg.AllowedMutations) ~= nil then
+                        if passesGlobal and next(cfg.AllowedMutations) ~= nil then
                             if not cfg.AllowedMutations[normalized] then
-                                continue
+                                passesGlobal = false
                             end
                         end
+                        allowedThisInstance = passesGlobal
                     end
 
-                    uniqueNames[nameLower] = true
-                    highlight(basePart, displayName, isGod, mutation)
-                    foundOne = true
-                    foundMutationText = mutation or "⚪ None"
-                    if isGod then
-                        foundGod = true
-                    else
-                        foundSecret = foundSecret or secretLookup[nameLower] or false
+                    if allowedThisInstance then
+                        local existing = candidates[nameLower]
+                        if not existing then
+                            candidates[nameLower] = {
+                                part = basePart,
+                                mutation = mutation,
+                                normalized = normalized,
+                                isGod = isGod,
+                                displayName = displayName
+                            }
+                        else
+                            -- prioritize Lava: if existing is not lava but this is lava, replace
+                            if existing.normalized ~= "lava" and normalized == "lava" then
+                                candidates[nameLower] = {
+                                    part = basePart,
+                                    mutation = mutation,
+                                    normalized = normalized,
+                                    isGod = isGod,
+                                    displayName = displayName
+                                }
+                            end
+                            -- otherwise keep existing (first found)
+                        end
                     end
                 end
             end
         end
     end
 
+    -- Now finalize: highlight all candidates (respecting only one highlight per name)
+    for nameLower, info in pairs(candidates) do
+        if info and info.part and info.part.Parent then
+            highlight(info.part, info.displayName, info.isGod, info.mutation)
+            foundOne = true
+            foundMutationText = info.mutation or "⚪ None"
+            if info.isGod then
+                foundGod = true
+            else
+                foundSecret = foundSecret or secretLookup[nameLower] or false
+            end
+        end
+    end
+
     if foundOne then
+        -- stop the hopping spam immediately on detection
+        getgenv().StopHopping = true
         showFoundGui(foundGod, foundSecret, foundMutationText)
     else
+        -- not found: start/continue hopping (this will teleport out of this instance)
         task.wait(0.1)
         serverHop()
     end
-
 end
 
 --// Prevent rerun same server with known brainrot (respects per-brainrot Enabled flag)
@@ -542,13 +582,14 @@ for _, obj in ipairs(Workspace:GetChildren()) do
     end
 end
 
---// Initialize VisitedServers storage
+--// Initialize VisitedServers storage and hopping flag
 getgenv().VisitedServers = getgenv().VisitedServers or {}
+getgenv().StopHopping = false
 
 --// Start
 if alreadyFound then
     task.wait(0.1)
-    serverHop()
+    findTopBrainrots()
 else
     task.wait(0.1)
     findTopBrainrots()
